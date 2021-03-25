@@ -5,6 +5,7 @@ from functools import reduce
 from operator import mul
 from . import prune
 from enum import IntEnum
+import collections
 
 __all__ = ['PruningPlan', 'Dependency', 'DependencyGraph']
 
@@ -408,7 +409,11 @@ class DependencyGraph(object):
     
     def _obtain_forward_graph(self, model, example_inputs, output_transform):
         #module_to_node = { m: Node( m ) for m in model.modules() if isinstance( m, self.PRUNABLE_MODULES ) }
-        model.eval().cpu()
+        use_cuda = torch.cuda.is_available()
+        device = torch.device("cuda" if use_cuda else "cpu")
+        print (f"Using device: {device}")
+        model.to(device)
+        model.eval()
         # Get grad_fn from prunable modules
         grad_fn_to_module = {}
 
@@ -421,7 +426,11 @@ class DependencyGraph(object):
             grad_fn_to_module[outputs.grad_fn] = module
         
         hooks = [m.register_forward_hook(_record_module_grad_fn) for m in model.modules() if isinstance( m, tuple(self.PRUNABLE_MODULES )) ]
+        
         out = model(example_inputs)
+        if isinstance(out, collections.OrderedDict):
+            out = out['prob'].squeeze()
+        
         for hook in hooks:
             hook.remove()
         reused = [ m for (m, count) in visited.items() if count>1 ]
